@@ -1,12 +1,12 @@
 streamlit
 pandas
 numpy
-matplotlib
-seaborn
 plotly
-scipy
+yfinance
 scikit-learn
 hmmlearn
-yfinance
-python-dateutil
+matplotlib
+seaborn
+scipy
 statsmodels
+pandas-datareader
