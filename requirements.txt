@@ -8,6 +8,5 @@ scipy
 scikit-learn
 hmmlearn
 yfinance
-pandas-datareader
 python-dateutil
 statsmodels

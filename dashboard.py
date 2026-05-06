@@ -15,7 +15,6 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 import yfinance as yf
-from pandas_datareader import data as pdr
 from datetime import date
 from dateutil.relativedelta import relativedelta
 from itertools import product
@@ -116,9 +115,15 @@ def yf_close(ticker, start, end, name=None):
 
 
 def fetch_fred(series, start, end):
-    s = pdr.DataReader(series, "fred", start, end).iloc[:, 0]
-    s.index = pd.to_datetime(s.index).tz_localize(None)
-    return s.rename(series)
+    """Fetch a FRED series via the public CSV endpoint (no API key, no extra deps)."""
+    url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series}"
+    df = pd.read_csv(url, parse_dates=["observation_date"])
+    df.columns = ["Date", series]
+    df[series] = pd.to_numeric(df[series], errors="coerce")
+    df = df.dropna().set_index("Date")
+    df.index = pd.to_datetime(df.index).tz_localize(None)
+    df = df.loc[(df.index >= pd.Timestamp(start)) & (df.index <= pd.Timestamp(end))]
+    return df[series].rename(series)
 
 
 def merge_backward(base, other, name):
