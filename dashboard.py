@@ -12,9 +12,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.mixture import GaussianMixture
 from sklearn.metrics import silhouette_score
 from hmmlearn.hmm import GaussianHMM
-from pandas_datareader import data as pdr
 from scipy.stats import f_oneway
-from datetime import date
 
 warnings.filterwarnings("ignore")
 
@@ -36,7 +34,7 @@ st.markdown("Gaussian Mixture Models (GMM) + Hidden Markov Models (HMM)")
 # =====================================================
 
 TRAIN_START = "2010-01-01"
-TRAIN_END   = "2024-12-31"
+TRAIN_END = "2024-12-31"
 
 FEATURE_COLS = [
     "Log_Return",
@@ -57,9 +55,20 @@ model_choice = st.sidebar.selectbox(
     ["GMM", "HMM"]
 )
 
-show_features = st.sidebar.checkbox("Show Feature Charts", True)
-show_backtest = st.sidebar.checkbox("Show Backtest", True)
-show_statistics = st.sidebar.checkbox("Show Statistics", True)
+show_features = st.sidebar.checkbox(
+    "Show Feature Charts",
+    True
+)
+
+show_backtest = st.sidebar.checkbox(
+    "Show Backtest",
+    True
+)
+
+show_statistics = st.sidebar.checkbox(
+    "Show Statistics",
+    True
+)
 
 # =====================================================
 # DATA FUNCTIONS
@@ -85,13 +94,35 @@ def yf_close(ticker, start, end, name=None):
 
     return s.rename(name or ticker)
 
+# =====================================================
+# FRED FIX
+# =====================================================
+
 @st.cache_data
 def fetch_fred(series, start, end):
 
-    s = pdr.DataReader(series, "fred", start, end).iloc[:, 0]
-    s.index = pd.to_datetime(s.index).tz_localize(None)
+    url = (
+        f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series}"
+    )
 
-    return s
+    df = pd.read_csv(url)
+
+    df.columns = ["Date", series]
+
+    df["Date"] = pd.to_datetime(df["Date"])
+
+    df = df[
+        (df["Date"] >= pd.to_datetime(start)) &
+        (df["Date"] <= pd.to_datetime(end))
+    ]
+
+    df.set_index("Date", inplace=True)
+
+    return df[series]
+
+# =====================================================
+# BUILD DATASET
+# =====================================================
 
 @st.cache_data
 def build_dataset(start, end):
@@ -107,9 +138,20 @@ def build_dataset(start, end):
     if isinstance(spy.columns, pd.MultiIndex):
         spy.columns = spy.columns.droplevel(1)
 
-    spy = spy[["Open", "High", "Low", "Close", "Volume"]]
+    spy = spy[[
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "Volume"
+    ]]
 
-    vix = yf_close("^VIX", start, end, name="VIX")
+    vix = yf_close(
+        "^VIX",
+        start,
+        end,
+        name="VIX"
+    )
 
     spy["VIX"] = vix
 
@@ -122,8 +164,17 @@ def build_dataset(start, end):
         "VIX": "last"
     }).dropna()
 
-    term_spread = fetch_fred("T10Y2Y", start, end)
-    term_spread = term_spread.resample("W-FRI").last()
+    term_spread = fetch_fred(
+        "T10Y2Y",
+        start,
+        end
+    )
+
+    term_spread = (
+        term_spread
+        .resample("W-FRI")
+        .last()
+    )
 
     weekly["term_spread"] = term_spread
 
@@ -182,7 +233,11 @@ class Preprocessor:
         lower = df.quantile(0.01)
         upper = df.quantile(0.99)
 
-        df = df.clip(lower, upper, axis=1)
+        df = df.clip(
+            lower,
+            upper,
+            axis=1
+        )
 
         df = (
             df
@@ -237,28 +292,31 @@ with st.spinner("Training Optimized GMM..."):
     gmm.fit(X_train.values)
 
     gmm_states = gmm.predict(X_train.values)
-    gmm_probs = gmm.predict_proba(X_train.values)
+
+    gmm_probs = gmm.predict_proba(
+        X_train.values
+    )
 
 # =====================================================
-# GMM REGIME LABELING
+# GMM LABELING
 # =====================================================
 
 gmm_regime_stats = pd.DataFrame({
 
     "mean_return": (
-        features_df.loc[X_train.index, "Log_Return"]
+        features_df.loc[
+            X_train.index,
+            "Log_Return"
+        ]
         .groupby(gmm_states)
         .mean()
     ),
 
     "mean_vol": (
-        features_df.loc[X_train.index, "Volatility"]
-        .groupby(gmm_states)
-        .mean()
-    ),
-
-    "mean_vix": (
-        train_df.loc[X_train.index, "VIX"]
+        features_df.loc[
+            X_train.index,
+            "Volatility"
+        ]
         .groupby(gmm_states)
         .mean()
     )
@@ -306,29 +364,34 @@ with st.spinner("Training Optimized HMM..."):
 
     hmm.fit(X_train.values)
 
-    hmm_states = hmm.predict(X_train.values)
-    hmm_probs = hmm.predict_proba(X_train.values)
+    hmm_states = hmm.predict(
+        X_train.values
+    )
+
+    hmm_probs = hmm.predict_proba(
+        X_train.values
+    )
 
 # =====================================================
-# HMM REGIME LABELING
+# HMM LABELING
 # =====================================================
 
 hmm_regime_stats = pd.DataFrame({
 
     "mean_return": (
-        features_df.loc[X_train.index, "Log_Return"]
+        features_df.loc[
+            X_train.index,
+            "Log_Return"
+        ]
         .groupby(hmm_states)
         .mean()
     ),
 
     "mean_vol": (
-        features_df.loc[X_train.index, "Volatility"]
-        .groupby(hmm_states)
-        .mean()
-    ),
-
-    "mean_vix": (
-        train_df.loc[X_train.index, "VIX"]
+        features_df.loc[
+            X_train.index,
+            "Volatility"
+        ]
         .groupby(hmm_states)
         .mean()
     )
@@ -368,14 +431,12 @@ if model_choice == "GMM":
 
     current_regime = gmm_regimes
     current_probs = gmm_probs
-    current_model = gmm
     current_states = gmm_states
 
 else:
 
     current_regime = hmm_regimes
     current_probs = hmm_probs
-    current_model = hmm
     current_states = hmm_states
 
 # =====================================================
@@ -401,30 +462,30 @@ latest_confidence = (
     .max(axis=1)[-1]
 )
 
-col1, col2, col3, col4 = st.columns(4)
+c1, c2, c3, c4 = st.columns(4)
 
-col1.metric(
+c1.metric(
     "Current Regime",
     latest_regime
 )
 
-col2.metric(
+c2.metric(
     "Confidence",
     f"{latest_confidence:.2%}"
 )
 
-col3.metric(
+c3.metric(
     "S&P 500",
     f"{latest_close:.2f}"
 )
 
-col4.metric(
+c4.metric(
     "VIX",
     f"{latest_vix:.2f}"
 )
 
 # =====================================================
-# REGIME VISUALIZATION
+# REGIME OVERLAY
 # =====================================================
 
 st.subheader("Market Regime Overlay")
@@ -447,7 +508,10 @@ fig.add_trace(
         x=price_data.index,
         y=price_data,
         mode="lines",
-        line=dict(color="black", width=2),
+        line=dict(
+            color="black",
+            width=2
+        ),
         name="S&P 500"
     )
 )
